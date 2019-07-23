@@ -86,11 +86,14 @@ enum THColors
 /**
  * Custom blocks
  */
-//% weight=50 color=#e7660b icon="\uf1b9"
+//% weight=50 color=#e7660b icon="\uf079"
 namespace THBoards
 {
     let neoStrip: neopixel.Strip;
     let _updateMode = THMode.Auto;
+    let _model = THModel.Zero;
+    let lDir = 0;
+    let rDir = 0;
 
     /**
       * Select Model of TH Board (Determines Pins used)
@@ -99,7 +102,6 @@ namespace THBoards
       */
     //% blockId="th_model" block="select TH Board model %model"
     //% weight=100
-    //% deprecated=true
     export function th_model(model: THModel): void
     {
         _model = model;
@@ -129,46 +131,60 @@ namespace THBoards
     //% subcategory=Motors
     export function motor(motor: THMotor, speed: number): void
     {
-        let speed0 = 0;
-        let speed1 = 0;
-        setPWM(Math.abs(speed));
+        let reverse = 0;
         if (speed == 0)
+        {
             stop(THStopMode.Coast);
-        else if (speed > 0)
-        {
-            speed0 = speed;
-            speed1 = 0;
+            return;
         }
-        else
+        if (speed < 0)
         {
-            speed0 = 0;
-            speed1 = 0 - speed;
+            reverse = 1;
+            speed = -speed;
         }
-        if ((motor == THMotor.M1) || (motor == THMotor.Both))
+        setPWM(speed);
+        if (_model == THModel.Plus)
         {
-            if (_model == THModel.Zero)
+            if ((motor == THMotor.M1) || (motor == THMotor.Both))
             {
-                pins.analogWritePin(AnalogPin.P12, speed0);
-                pins.analogWritePin(AnalogPin.P13, speed1);
+                pins.analogWritePin(AnalogPin.P12, speed);
+                pins.digitalWritePin(DigitalPin.P13, reverse);
+                lDir = reverse;
             }
-            else
+            if ((motor == THMotor.M2) || (motor == THMotor.Both))
             {
-                pins.analogWritePin(AnalogPin.P12, speed0);
-                pins.digitalWritePin(AnalogPin.P13, 0);
+                pins.analogWritePin(AnalogPin.P14, speed);
+                pins.digitalWritePin(DigitalPin.P15, reverse);
+                rDir = reverse;
             }
         }
-
-        if ((motor == THMotor.M2) || (motor == THMotor.Both))
+        else // model == Zero
         {
-            if (_model == THModel.Zero)
+            if ((motor == THMotor.M1) || (motor == THMotor.Both))
             {
-                pins.analogWritePin(AnalogPin.P14, speed0);
-                pins.analogWritePin(AnalogPin.P15, speed1);
+                if (reverse == 0)
+                {
+                    pins.analogWritePin(AnalogPin.P12, speed);
+                    pins.analogWritePin(AnalogPin.P13, 0);
+                }
+                else
+                {
+                    pins.analogWritePin(AnalogPin.P12, 0);
+                    pins.analogWritePin(AnalogPin.P13, speed);
+                }
             }
-            else
+            if ((motor == THMotor.M2) || (motor == THMotor.Both))
             {
-                pins.analogWritePin(AnalogPin.P14, speed0);
-                pins.digitalWritePin(AnalogPin.P15, 0);
+                if (reverse == 0)
+                {
+                    pins.analogWritePin(AnalogPin.P14, speed);
+                    pins.analogWritePin(AnalogPin.P15, 0);
+                }
+                else
+                {
+                    pins.analogWritePin(AnalogPin.P14, 0);
+                    pins.analogWritePin(AnalogPin.P15, speed);
+                }
             }
         }
     }
@@ -185,10 +201,20 @@ namespace THBoards
         let stopMode = 0;
         if (mode == THStopMode.Brake)
             stopMode = 1;
-        pins.digitalWritePin(DigitalPin.P16, stopMode);
-        pins.digitalWritePin(DigitalPin.P14, stopMode);
-        pins.digitalWritePin(DigitalPin.P8, stopMode);
-        pins.digitalWritePin(DigitalPin.P12, stopMode);
+        if (_model == THModel.Zero)
+        {
+            pins.digitalWritePin(DigitalPin.P12, stopMode);
+            pins.digitalWritePin(DigitalPin.P13, stopMode);
+            pins.digitalWritePin(DigitalPin.P14, stopMode);
+            pins.digitalWritePin(DigitalPin.P15, stopMode);
+        }
+        else
+        {
+            pins.digitalWritePin(DigitalPin.P12, 0);
+            pins.digitalWritePin(DigitalPin.P13, lDir ^ stopMode);
+            pins.digitalWritePin(DigitalPin.P14, 0);
+            pins.digitalWritePin(DigitalPin.P15, rDir ^ stopMode);
+        }
     }
 
     /**
@@ -235,13 +261,13 @@ namespace THBoards
             speed = 0;
         if (direction == THRobotDirection.Left)
         {
-            motor(THMotor.Left, -speed);
-            motor(THMotor.Right, speed);
+            motor(THMotor.M1, -speed);
+            motor(THMotor.M2, speed);
         }
         else if (direction == THRobotDirection.Right)
         {
-            motor(THMotor.Left, speed);
-            motor(THMotor.Right, -speed);
+            motor(THMotor.M1, speed);
+            motor(THMotor.M2, -speed);
         }
     }
 
@@ -262,42 +288,6 @@ namespace THBoards
         stop(THStopMode.Coast);
     }
 
-// Sensors and Addons
-
-    /**
-    * Read distance from sonar module connected to accessory connector.
-    * @param unit desired conversion unit
-    */
-    //% blockId="bitbot_sonar" block="read sonar as %unit"
-    //% weight=100
-    //% subcategory=Sensors
-    export function sonar(unit: THPingUnit): number
-    {
-        // send pulse
-        let trig = DigitalPin.P15;
-        let echo = DigitalPin.P15;
-        let maxCmDistance = 500;
-        let d=10;
-        pins.setPull(trig, PinPullMode.PullNone);
-        for (let x=0; x<10; x++)
-        {
-            pins.digitalWritePin(trig, 0);
-            control.waitMicros(2);
-            pins.digitalWritePin(trig, 1);
-            control.waitMicros(10);
-            pins.digitalWritePin(trig, 0);
-            // read pulse
-            d = pins.pulseIn(echo, PulseValue.High, maxCmDistance * 58);
-            if (d>0)
-                break;
-        }
-        switch (unit)
-        {
-            case THPingUnit.Centimeters: return d / 58;
-            case THPingUnit.Inches: return d / 148;
-            default: return d;
-        }
-    }
 
 // LED Blocks
 
