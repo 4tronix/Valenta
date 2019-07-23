@@ -1,0 +1,19 @@
+{
+    "name": "THBoards",
+    "version": "1.0.2",
+    "description": "Microsoft MakeCode package for THZero & THPlus",
+    "license": "MIT",
+    "dependencies": {
+        "core": "*",
+        "neopixel": "github:microsoft/pxt-neopixel#v0.6.10"
+    },
+    "files": [
+        "README.md",
+        "main.ts"
+     ],
+    "testFiles": [
+        "tests.ts"
+    ],
+    "yotta": {},
+    "public": true
+}
