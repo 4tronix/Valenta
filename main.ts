@@ -296,7 +296,7 @@ namespace THBoards
     {
         if (!neoStrip)
         {
-            neoStrip = neopixel.create(DigitalPin.P13, 4, NeoPixelMode.RGB);
+            neoStrip = neopixel.create(DigitalPin.P16, 4, NeoPixelMode.RGB);
             neoStrip.setBrightness(40);
         }
         return neoStrip;
