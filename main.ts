@@ -86,7 +86,7 @@ enum THColors
 /**
  * Custom blocks
  */
-//% weight=50 color=#a93135 icon="\uf3fd"
+//% weight=50 color=#a93135 icon="\uf0e4"
 namespace THBoards
 {
     let neoStrip: neopixel.Strip;
