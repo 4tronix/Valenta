@@ -91,16 +91,99 @@ namespace THBoards
 {
     let neoStrip: neopixel.Strip;
     let _updateMode = THMode.Auto;
+    let _flashing = false;
+
     let _model = THModel.Zero;
     let lDir = 0;
     let rDir = 0;
+// Servo PCA9685
+    let PCA = 0x40;	// i2c address of PCA9685 servo controller
+    let initI2C = false;
+    let SERVOS = 0x06; // first servo address for start byte low
+
+// Helper functions
+
+    // initialise the servo driver and the offset array values
+    function initPCA(): void
+    {
+
+        let i2cData = pins.createBuffer(2);
+        initI2C = true;
+
+        i2cData[0] = 0;		// Mode 1 register
+        i2cData[1] = 0x10;	// put to sleep
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+
+        i2cData[0] = 0xFE;	// Prescale register
+        i2cData[1] = 101;	// set to 60 Hz
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+
+        i2cData[0] = 0;		// Mode 1 register
+        i2cData[1] = 0x81;	// Wake up
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+
+        for (let servo=0; servo<16; servo++)
+        {
+            i2cData[0] = SERVOS + servo*4 + 0;	// Servo register
+            i2cData[1] = 0x00;			// low byte start - always 0
+            pins.i2cWriteBuffer(PCA, i2cData, false);
+
+            i2cData[0] = SERVOS + servo*4 + 1;	// Servo register
+            i2cData[1] = 0x00;			// high byte start - always 0
+            pins.i2cWriteBuffer(PCA, i2cData, false);
+        }
+    }
+
+    /**
+      * Initialise all servos to Angle=0
+      */
+    //% blockId="zeroServos"
+    //% block
+    //% subcategory=Servos
+    export function zeroServos(): void
+    {
+        for (let i=0; i<16; i++)
+            setServo(i, 0);
+    }
+
+    /**
+      * Set Servo Position by Angle
+      * @param servo Servo number (0 to 15)
+      * @param angle degrees to turn servo (-90 to +90)
+      */
+    //% blockId="an_setServo" block="set servo %servo| to angle %angle"
+    //% weight = 70
+    //% subcategory=Servos
+    export function setServo(servo: number, angle: number): void
+    {
+        if (initI2C == false)
+        {
+            initPCA();
+        }
+        // two bytes need setting for start and stop positions of the servo
+        // servos start at SERVOS (0x06) and are then consecutive blocks of 4 bytes
+        // the start position (always 0x00) is set during init for all servos
+        // the zero offset for each servo is read during init into the servoOffset array
+
+        let i2cData = pins.createBuffer(2);
+        let start = 0;
+        let stop = 369 + angle * 223 / 90;
+
+        i2cData[0] = SERVOS + servo*4 + 2;	// Servo register
+        i2cData[1] = (stop & 0xff);		// low byte stop
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+
+        i2cData[0] = SERVOS + servo*4 + 3;	// Servo register
+        i2cData[1] = (stop >> 8);		// high byte stop
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+    }
 
     /**
       * Select Model of TH Board (Determines Pins used)
       *
       * @param model Model of TH Board; Zero or Plus
       */
-    //% blockId="th_model" block="select TH Board model %model"
+    //% blockId="th_model" block="select 05 TH Board model %model"
     //% weight=100
     export function th_model(model: THModel): void
     {
@@ -313,7 +396,7 @@ namespace THBoards
       * Sets all LEDs to a given color (range 0-255 for r, g, b).
       * @param rgb RGB color of the LED
       */
-    //% blockId="th_set_led_color" block="set all LEDs to %rgb=mb_colours"
+    //% blockId="th_set_led_color" block="set LED to %rgb=th_colours"
     //% weight=100
     //% subcategory=LEDs
     export function setLedColor(rgb: number)
@@ -325,7 +408,7 @@ namespace THBoards
     /**
       * Clear all leds.
       */
-    //% blockId="th_led_clear" block="clear all LEDs"
+    //% blockId="th_led_clear" block="clear LED"
     //% weight=90
     //% subcategory=LEDs
     export function ledClear(): void
@@ -343,6 +426,7 @@ namespace THBoards
     //% blockId="th_set_pixel_color" block="set LED at %ledId|to %rgb=mb_colours"
     //% weight=80
     //% subcategory=LEDs
+    //% deprecated=true
     export function setPixelColor(ledId: number, rgb: number): void
     {
         neo().setPixelColor(ledId, rgb);
@@ -369,6 +453,7 @@ namespace THBoards
     //% blockId="th_rainbow" block="set led rainbow"
     //% weight=60
     //% subcategory=LEDs
+    //% deprecated=true
     export function ledRainbow(): void
     {
         neo().showRainbow(1, 360);
@@ -380,7 +465,7 @@ namespace THBoards
       *
       * @param color Standard RGB Led Colours
       */
-    //% blockId="mb_colours" block=%color
+    //% blockId="th_colours" block=%color
     //% weight=50
     //% subcategory=LEDs
     export function THColours(color: THColors): number
@@ -388,15 +473,16 @@ namespace THBoards
         return color;
     }
 
-    // Advanced blocks
+    // Advanced blocks, Mostly deprecated or moved to LEDs folder
 
     /**
       * Set LED update mode (Manual or Automatic)
       * @param updateMode setting automatic will show LED changes automatically
       */
     //% blockId="th_set_updateMode" block="set %updateMode|update mode"
-    //% weight=100
-    //% advanced=true
+    //% weight=40
+    //% subcategory=LEDs
+    //% deprecated=true
     export function setUpdateMode(updateMode: THMode): void
     {
         _updateMode = updateMode;
@@ -406,8 +492,9 @@ namespace THBoards
       * Show LED changes
       */
     //% blockId="led_show" block="show LED changes"
-    //% weight=90
-    //% advanced=true
+    //% weight=35
+    //% subcategory=LEDs
+    //% deprecated=true
     export function ledShow(): void
     {
         neo().show();
@@ -417,8 +504,9 @@ namespace THBoards
      * Rotate LEDs forward.
      */
     //% blockId="th_led_rotate" block="rotate LEDs"
-    //% weight=80
-    //% advanced=true
+    //% weight=30
+    //% subcategory=LEDs
+    //% deprecated=true
     export function ledRotate(): void
     {
         neo().rotate(1);
@@ -429,9 +517,9 @@ namespace THBoards
      * Shift LEDs forward and clear with zeros.
      */
     //% blockId="th_led_shift" block="shift LEDs"
-    //% weight=70
+    //% weight=25
     //% subcategory=Leds
-    //% advanced=true
+    //% deprecated=true
     export function ledShift(): void
     {
         neo().shift(1);
@@ -445,12 +533,51 @@ namespace THBoards
       * @param green Green value of the LED (0 to 255)
       * @param blue Blue value of the LED (0 to 255)
       */
-    //% blockId="bitbot_convertRGB" block="convert from red %red| green %green| blue %blue"
-    //% weight=60
-    //% advanced=true
+    //% blockId="th_convertRGB" block="convert from red %red| green %green| blue %blue"
+    //% weight=20
+    //% subcategory=LEDs
     export function convertRGB(r: number, g: number, b: number): number
     {
         return ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
     }
+
+    /**
+      * Start Flashing
+      * @param color the colour to flash
+      * @param delay time in ms for each flash, eg: 100,50,200,500
+      */
+    //% blockId="startFlash" block="start flash %color=th_colours| at %delay|(ms)"
+    //% subcategory=LEDs
+    //% delay.min=1 delay.max=10000
+    //% weight=15
+    export function startFlash(color: number, delay: number): void
+    {
+        if(_flashing == false)
+        {
+            _flashing = true;
+            control.inBackground(() =>
+            {
+                while (_flashing)
+                {                                
+                    setLedColor(color);
+                    basic.pause(delay);
+                    setLedColor(0);
+                    basic.pause(delay);
+                }
+            })
+        }
+    }
+
+    /**
+      * Stop Flashing
+      */
+    //% block
+    //% subcategory=LEDs
+    //% weight=10
+    export function stopFlash(): void
+    {
+        _flashing = false;
+    }
+
 
 }
