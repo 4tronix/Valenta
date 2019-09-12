@@ -51,6 +51,7 @@ enum THMode
   */
 enum THModel
 {
+    Unknown,
     Zero,
     Plus
 }
@@ -93,12 +94,13 @@ namespace THBoards
     let _updateMode = THMode.Auto;
     let _flashing = false;
 
-    let _model = THModel.Zero;
+    let _model = THModel.Unknown;
     let lDir = 0;
     let rDir = 0;
 // Servo PCA9685
     let PCA = 0x40;	// i2c address of PCA9685 servo controller
     let initI2C = false;
+    let _i2cError = 0;
     let SERVOS = 0x06; // first servo address for start byte low
 
 // Helper functions
@@ -126,7 +128,7 @@ namespace THBoards
         {
             i2cData[0] = SERVOS + servo*4 + 0;	// Servo register
             i2cData[1] = 0x00;			// low byte start - always 0
-            pins.i2cWriteBuffer(PCA, i2cData, false);
+            _i2cError = pins.i2cWriteBuffer(PCA, i2cData, false);
 
             i2cData[0] = SERVOS + servo*4 + 1;	// Servo register
             i2cData[1] = 0x00;			// high byte start - always 0
@@ -178,16 +180,22 @@ namespace THBoards
         pins.i2cWriteBuffer(PCA, i2cData, false);
     }
 
+
     /**
-      * Select Model of TH Board (Determines Pins used)
-      *
-      * @param model Model of TH Board; Zero or Plus
+      * get Model of Board (Zero or Plus)
       */
-    //% blockId="th_model" block="select 05 TH Board model %model"
-    //% weight=100
-    export function th_model(model: THModel): void
+    //% blockId="th_model" block="board model"
+    //% weight=90
+    export function getModel(): THModel
     {
-        _model = model;
+        if (_model == THModel.Unknown)
+        {
+            if (pins.i2cReadNumber(64, NumberFormat.Int8LE, false) == 0)
+                _model = THModel.Zero;
+            else
+                _model = THModel.Plus;
+        }
+        return _model;
     }
 
 // Motor Blocks
@@ -226,7 +234,7 @@ namespace THBoards
             speed = -speed;
         }
         setPWM(speed);
-        if (_model == THModel.Plus)
+        if (getModel() == THModel.Plus)
         {
             if ((motor == THMotor.M1) || (motor == THMotor.Both))
             {
@@ -284,7 +292,7 @@ namespace THBoards
         let stopMode = 0;
         if (mode == THStopMode.Brake)
             stopMode = 1;
-        if (_model == THModel.Zero)
+        if (getModel() == THModel.Zero)
         {
             pins.digitalWritePin(DigitalPin.P12, stopMode);
             pins.digitalWritePin(DigitalPin.P13, stopMode);
