@@ -2,7 +2,7 @@
 /**
   * Enumeration of motors.
   */
-enum THMotor
+enum vMotor
 {
     //% block="motor 1"
     M1,
@@ -15,7 +15,7 @@ enum THMotor
 /**
   * Enumeration of directions.
   */
-enum THRobotDirection
+enum vRobotDirection
 {
     //% block="left"
     Left,
@@ -26,7 +26,7 @@ enum THRobotDirection
 /**
   * Stop modes. Coast or Brake
   */
-enum THStopMode
+enum vStopMode
 {
     //% block="no brake"
     Coast,
@@ -35,32 +35,21 @@ enum THStopMode
 }
 
 /**
-  * Update mode for LEDs
-  * setting to Manual requires show LED changes blocks
-  * setting to Auto will update the LEDs everytime they change
-  */
-enum THMode
-{
-    Manual,
-    Auto
-}
-
-/**
-  * Model Types of TH_Board
+  * Model Types of Valenta Board
   * Zero or Plus
   */
-enum THModel
+enum vModel
 {
-    Unknown,
     Zero,
-    Plus
+    Plus,
+    Auto
 }
 
 
 /**
   * Pre-Defined LED colours
   */
-enum THColors
+enum vColors
 {
     //% block=red
     Red = 0xff0000,
@@ -88,13 +77,12 @@ enum THColors
  * Custom blocks
  */
 //% weight=50 color=#a93135 icon="\uf0e4"
-namespace THBoards
+namespace valenta
 {
     let neoStrip: neopixel.Strip;
-    let _updateMode = THMode.Auto;
     let _flashing = false;
 
-    let _model = THModel.Unknown;
+    let _model = vModel.Auto;
     let lDir = 0;
     let rDir = 0;
 // Servo PCA9685
@@ -181,21 +169,51 @@ namespace THBoards
     }
 
 
+// Blocks for selecting Board Model
+
+    /**
+      * Force Model of Board (Determines Pins used etc)
+      *
+      * @param model Model of Board; Zero or Plus
+      */
+    //% blockId="val_model" block="select board model %model=v_models"
+    //% weight=100
+    //% subcategory=Board_Model
+    export function select_model(model: number): void
+    {
+        if((model >= vModels(vModel.Zero)) && (model <= vModels(vModel.Auto)))
+            _model = model;
+    }
+
     /**
       * get Model of Board (Zero or Plus)
       */
-    //% blockId="th_model" block="board model"
+    //% blockId="v_model" block="board model"
     //% weight=90
-    export function getModel(): THModel
+    //% subcategory=Board_Model
+    export function getModel(): vModel
     {
-        if (_model == THModel.Unknown)
+        if (_model == vModel.Auto)
         {
             if (pins.i2cReadNumber(64, NumberFormat.Int8LE, false) == 0)
-                _model = THModel.Zero;
+                _model = vModel.Zero;
             else
-                _model = THModel.Plus;
+                _model = vModel.Plus;
         }
         return _model;
+    }
+
+    /**
+      * Get numeric value of Board Model
+      *
+      * @param model Board Model eg: Zero
+      */
+    //% blockId="v_models" block=%model
+    //% weight=80
+    //% subcategory=Board_Model
+    export function vModels(model: vModel): number
+    {
+        return model;
     }
 
 // Motor Blocks
@@ -217,15 +235,15 @@ namespace THBoards
       * @param motor motor to drive.
       * @param speed speed of motor (-1023 to 1023). eg: 600
       */
-    //% blockId="th_motor" block="drive %motor|motor(s) at speed %speed"
+    //% blockId="val_motor" block="drive %motor|motor(s) at speed %speed"
     //% weight=50
     //% subcategory=Motors
-    export function motor(motor: THMotor, speed: number): void
+    export function motor(motor: vMotor, speed: number): void
     {
         let reverse = 0;
         if (speed == 0)
         {
-            stop(THStopMode.Coast);
+            stop(vStopMode.Coast);
             return;
         }
         if (speed < 0)
@@ -234,15 +252,15 @@ namespace THBoards
             speed = -speed;
         }
         setPWM(speed);
-        if (getModel() == THModel.Plus)
+        if (getModel() == vModel.Plus)
         {
-            if ((motor == THMotor.M1) || (motor == THMotor.Both))
+            if ((motor == vMotor.M1) || (motor == vMotor.Both))
             {
                 pins.analogWritePin(AnalogPin.P12, speed);
                 pins.digitalWritePin(DigitalPin.P13, reverse);
                 lDir = reverse;
             }
-            if ((motor == THMotor.M2) || (motor == THMotor.Both))
+            if ((motor == vMotor.M2) || (motor == vMotor.Both))
             {
                 pins.analogWritePin(AnalogPin.P14, speed);
                 pins.digitalWritePin(DigitalPin.P15, reverse);
@@ -251,7 +269,7 @@ namespace THBoards
         }
         else // model == Zero
         {
-            if ((motor == THMotor.M1) || (motor == THMotor.Both))
+            if ((motor == vMotor.M1) || (motor == vMotor.Both))
             {
                 if (reverse == 0)
                 {
@@ -264,7 +282,7 @@ namespace THBoards
                     pins.analogWritePin(AnalogPin.P13, speed);
                 }
             }
-            if ((motor == THMotor.M2) || (motor == THMotor.Both))
+            if ((motor == vMotor.M2) || (motor == vMotor.Both))
             {
                 if (reverse == 0)
                 {
@@ -284,15 +302,15 @@ namespace THBoards
       * Stop robot by coasting slowly to a halt or braking
       * @param mode Brakes on or off
       */
-    //% blockId="th_stop" block="stop with %mode"
+    //% blockId="val_stop" block="stop with %mode"
     //% weight=80
     //% subcategory=Motors
-    export function stop(mode: THStopMode): void
+    export function stop(mode: vStopMode): void
     {
         let stopMode = 0;
-        if (mode == THStopMode.Brake)
+        if (mode == vStopMode.Brake)
             stopMode = 1;
-        if (getModel() == THModel.Zero)
+        if (getModel() == vModel.Zero)
         {
             pins.digitalWritePin(DigitalPin.P12, stopMode);
             pins.digitalWritePin(DigitalPin.P13, stopMode);
@@ -312,13 +330,13 @@ namespace THBoards
       * Drive robot forward (or backward) at speed.
       * @param speed speed of motor between -1023 and 1023. eg: 600
       */
-    //% blockId="th_drive" block="drive at speed %speed"
+    //% blockId="val_drive" block="drive at speed %speed"
     //% speed.min=-1023 speed.max=1023
     //% weight=100
     //% subcategory=Motors
     export function drive(speed: number): void
     {
-        motor(THMotor.Both, speed);
+        motor(vMotor.Both, speed);
     }
 
     /**
@@ -326,7 +344,7 @@ namespace THBoards
       * @param speed speed of motor between -1023 and 1023. eg: 600
       * @param milliseconds duration in milliseconds to drive forward for, then stop. eg: 400
       */
-    //% blockId="th_drive_milliseconds" block="drive at speed %speed| for %milliseconds|(ms)"
+    //% blockId="val_drive_milliseconds" block="drive at speed %speed| for %milliseconds|(ms)"
     //% speed.min=-1023 speed.max=1023
     //% weight=70
     //% subcategory=Motors
@@ -334,7 +352,7 @@ namespace THBoards
     {
         drive(speed);
         basic.pause(milliseconds);
-        stop(THStopMode.Coast);
+        stop(vStopMode.Coast);
     }
 
     /**
@@ -342,23 +360,23 @@ namespace THBoards
       * @param direction direction to turn.
       * @param speed speed of motor between 0 and 1023. eg: 600
       */
-    //% blockId="th_spin" block="spin %direction|at speed %speed"
+    //% blockId="val_spin" block="spin %direction|at speed %speed"
     //% speed.min=0 speed.max=1023
     //% weight=90
     //% subcategory=Motors
-    export function spin(direction: THRobotDirection, speed: number): void
+    export function spin(direction: vRobotDirection, speed: number): void
     {
         if (speed < 0)
             speed = 0;
-        if (direction == THRobotDirection.Left)
+        if (direction == vRobotDirection.Left)
         {
-            motor(THMotor.M1, -speed);
-            motor(THMotor.M2, speed);
+            motor(vMotor.M1, -speed);
+            motor(vMotor.M2, speed);
         }
-        else if (direction == THRobotDirection.Right)
+        else if (direction == vRobotDirection.Right)
         {
-            motor(THMotor.M1, speed);
-            motor(THMotor.M2, -speed);
+            motor(vMotor.M1, speed);
+            motor(vMotor.M2, -speed);
         }
     }
 
@@ -368,15 +386,15 @@ namespace THBoards
       * @param speed speed of motor between 0 and 1023. eg: 600
       * @param milliseconds duration in milliseconds to spin for, then stop. eg: 400
       */
-    //% blockId="th_spin_milliseconds" block="spin %direction|at speed %speed| for %milliseconds|(ms)"
+    //% blockId="val_spin_milliseconds" block="spin %direction|at speed %speed| for %milliseconds|(ms)"
     //% speed.min=0 speed.max=1023
     //% weight=60
     //% subcategory=Motors
-    export function spinMilliseconds(direction: THRobotDirection, speed: number, milliseconds: number): void
+    export function spinMilliseconds(direction: vRobotDirection, speed: number, milliseconds: number): void
     {
         spin(direction, speed);
         basic.pause(milliseconds);
-        stop(THStopMode.Coast);
+        stop(vStopMode.Coast);
     }
 
 
@@ -393,18 +411,17 @@ namespace THBoards
         return neoStrip;
     }
 
-    // update LEDs if _updateMode set to Auto
+    // update LEDs always
     function updateLEDs(): void
     {
-        if (_updateMode == THMode.Auto)
-            neo().show();
+        neo().show();
     }
 
     /**
       * Sets all LEDs to a given color (range 0-255 for r, g, b).
       * @param rgb RGB color of the LED
       */
-    //% blockId="th_set_led_color" block="set LED to %rgb=th_colours"
+    //% blockId="val_set_led_color" block="set LED to %rgb=val_colours"
     //% weight=100
     //% subcategory=LEDs
     export function setLedColor(rgb: number)
@@ -414,9 +431,9 @@ namespace THBoards
     }
 
     /**
-      * Clear all leds.
+      * Clear LED
       */
-    //% blockId="th_led_clear" block="clear LED"
+    //% blockId="val_led_clear" block="clear LED"
     //% weight=90
     //% subcategory=LEDs
     export function ledClear(): void
@@ -426,26 +443,10 @@ namespace THBoards
     }
 
     /**
-     * Set single LED to a given color (range 0-255 for r, g, b).
-     *
-     * @param ledId position of the LED (0 to 11)
-     * @param rgb RGB color of the LED
-     */
-    //% blockId="th_set_pixel_color" block="set LED at %ledId|to %rgb=mb_colours"
-    //% weight=80
-    //% subcategory=LEDs
-    //% deprecated=true
-    export function setPixelColor(ledId: number, rgb: number): void
-    {
-        neo().setPixelColor(ledId, rgb);
-        updateLEDs();
-    }
-
-    /**
      * Set the brightness of the LEDs
      * @param brightness a measure of LED brightness in 0-255. eg: 40
      */
-    //% blockId="th_led_brightness" block="set LED brightness %brightness"
+    //% blockId="val_led_brightness" block="set LED brightness %brightness"
     //% brightness.min=0 brightness.max=255
     //% weight=70
     //% subcategory=LEDs
@@ -456,82 +457,16 @@ namespace THBoards
     }
 
     /**
-      * Shows a rainbow pattern on all LEDs.
-      */
-    //% blockId="th_rainbow" block="set led rainbow"
-    //% weight=60
-    //% subcategory=LEDs
-    //% deprecated=true
-    export function ledRainbow(): void
-    {
-        neo().showRainbow(1, 360);
-        updateLEDs()
-    }
-
-    /**
       * Get numeric value of colour
       *
       * @param color Standard RGB Led Colours
       */
-    //% blockId="th_colours" block=%color
+    //% blockId="val_colours" block=%color
     //% weight=50
     //% subcategory=LEDs
-    export function THColours(color: THColors): number
+    export function vColours(color: vColors): number
     {
         return color;
-    }
-
-    // Advanced blocks, Mostly deprecated or moved to LEDs folder
-
-    /**
-      * Set LED update mode (Manual or Automatic)
-      * @param updateMode setting automatic will show LED changes automatically
-      */
-    //% blockId="th_set_updateMode" block="set %updateMode|update mode"
-    //% weight=40
-    //% subcategory=LEDs
-    //% deprecated=true
-    export function setUpdateMode(updateMode: THMode): void
-    {
-        _updateMode = updateMode;
-    }
-
-    /**
-      * Show LED changes
-      */
-    //% blockId="led_show" block="show LED changes"
-    //% weight=35
-    //% subcategory=LEDs
-    //% deprecated=true
-    export function ledShow(): void
-    {
-        neo().show();
-    }
-
-    /**
-     * Rotate LEDs forward.
-     */
-    //% blockId="th_led_rotate" block="rotate LEDs"
-    //% weight=30
-    //% subcategory=LEDs
-    //% deprecated=true
-    export function ledRotate(): void
-    {
-        neo().rotate(1);
-        updateLEDs()
-    }
-
-    /**
-     * Shift LEDs forward and clear with zeros.
-     */
-    //% blockId="th_led_shift" block="shift LEDs"
-    //% weight=25
-    //% subcategory=Leds
-    //% deprecated=true
-    export function ledShift(): void
-    {
-        neo().shift(1);
-        updateLEDs()
     }
 
     /**
@@ -541,7 +476,7 @@ namespace THBoards
       * @param green Green value of the LED (0 to 255)
       * @param blue Blue value of the LED (0 to 255)
       */
-    //% blockId="th_convertRGB" block="convert from red %red| green %green| blue %blue"
+    //% blockId="val_convertRGB" block="convert from red %red| green %green| blue %blue"
     //% weight=20
     //% subcategory=LEDs
     export function convertRGB(r: number, g: number, b: number): number
@@ -554,7 +489,7 @@ namespace THBoards
       * @param color the colour to flash
       * @param delay time in ms for each flash, eg: 100,50,200,500
       */
-    //% blockId="startFlash" block="start flash %color=th_colours| at %delay|(ms)"
+    //% blockId="startFlash" block="start flash %color=val_colours| at %delay|(ms)"
     //% subcategory=LEDs
     //% delay.min=1 delay.max=10000
     //% weight=15
@@ -569,7 +504,7 @@ namespace THBoards
                 {                                
                     setLedColor(color);
                     basic.pause(delay);
-                    setLedColor(0);
+                    ledClear();
                     basic.pause(delay);
                 }
             })

@@ -1,7 +1,7 @@
 {
-    "name": "THBoards",
+    "name": "Valenta",
     "version": "1.0.2",
-    "description": "Microsoft MakeCode package for THZero & THPlus",
+    "description": "Microsoft MakeCode package for Valenta Zero & Plus",
     "license": "MIT",
     "dependencies": {
         "core": "*",
