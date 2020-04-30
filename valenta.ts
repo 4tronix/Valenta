@@ -13,6 +13,17 @@ enum vMotor
 }
 
 /**
+  * Enumeration of forward/reverse directions
+  */
+enum vDirection
+{
+    //% block="forward"
+    Forward,
+    //% block="reverse"
+    Reverse
+}
+
+/**
   * Enumeration of directions.
   */
 enum vRobotDirection
@@ -79,8 +90,10 @@ enum vColors
 //% weight=50 color=#a93135 icon="\uf0e4"
 namespace valenta
 {
-    let neoStrip: neopixel.Strip;
+    let fireBand: fireled.Band;
     let _flashing = false;
+    let leftBias = 0;
+    let rightBias = 0;
 
     let _model = vModel.Auto;
     let lDir = 0;
@@ -90,84 +103,14 @@ namespace valenta
     let initI2C = false;
     let _i2cError = 0;
     let SERVOS = 0x06; // first servo address for start byte low
+    let servoOffset: number[] = [];
 
 // Helper functions
 
-    // initialise the servo driver and the offset array values
-    function initPCA(): void
+    function clamp(value: number, min: number, max: number): number
     {
-
-        let i2cData = pins.createBuffer(2);
-        initI2C = true;
-
-        i2cData[0] = 0;		// Mode 1 register
-        i2cData[1] = 0x10;	// put to sleep
-        pins.i2cWriteBuffer(PCA, i2cData, false);
-
-        i2cData[0] = 0xFE;	// Prescale register
-        i2cData[1] = 101;	// set to 60 Hz
-        pins.i2cWriteBuffer(PCA, i2cData, false);
-
-        i2cData[0] = 0;		// Mode 1 register
-        i2cData[1] = 0x81;	// Wake up
-        pins.i2cWriteBuffer(PCA, i2cData, false);
-
-        for (let servo=0; servo<16; servo++)
-        {
-            i2cData[0] = SERVOS + servo*4 + 0;	// Servo register
-            i2cData[1] = 0x00;			// low byte start - always 0
-            _i2cError = pins.i2cWriteBuffer(PCA, i2cData, false);
-
-            i2cData[0] = SERVOS + servo*4 + 1;	// Servo register
-            i2cData[1] = 0x00;			// high byte start - always 0
-            pins.i2cWriteBuffer(PCA, i2cData, false);
-        }
+        return Math.max(Math.min(max, value), min);
     }
-
-    /**
-      * Initialise all servos to Angle=0
-      */
-    //% blockId="zeroServos"
-    //% block
-    //% subcategory=Servos
-    export function zeroServos(): void
-    {
-        for (let i=0; i<16; i++)
-            setServo(i, 0);
-    }
-
-    /**
-      * Set Servo Position by Angle
-      * @param servo Servo number (0 to 15)
-      * @param angle degrees to turn servo (-90 to +90)
-      */
-    //% blockId="an_setServo" block="set servo %servo| to angle %angle"
-    //% weight = 70
-    //% subcategory=Servos
-    export function setServo(servo: number, angle: number): void
-    {
-        if (initI2C == false)
-        {
-            initPCA();
-        }
-        // two bytes need setting for start and stop positions of the servo
-        // servos start at SERVOS (0x06) and are then consecutive blocks of 4 bytes
-        // the start position (always 0x00) is set during init for all servos
-        // the zero offset for each servo is read during init into the servoOffset array
-
-        let i2cData = pins.createBuffer(2);
-        let start = 0;
-        let stop = 369 + angle * 223 / 90;
-
-        i2cData[0] = SERVOS + servo*4 + 2;	// Servo register
-        i2cData[1] = (stop & 0xff);		// low byte stop
-        pins.i2cWriteBuffer(PCA, i2cData, false);
-
-        i2cData[0] = SERVOS + servo*4 + 3;	// Servo register
-        i2cData[1] = (stop >> 8);		// high byte stop
-        pins.i2cWriteBuffer(PCA, i2cData, false);
-    }
-
 
 // Blocks for selecting Board Model
 
@@ -231,70 +174,39 @@ namespace valenta
     }
 
     /**
-      * Drive motor(s) forward or reverse.
-      * @param motor motor to drive.
-      * @param speed speed of motor (-1023 to 1023). eg: 600
+      * Move both motors forward (or backward) at speed.
+      * @param direction Move Forward or Reverse
+      * @param speed speed of motor between 0 and 100. eg: 60
       */
-    //% blockId="val_motor" block="drive %motor|motor(s) at speed %speed"
-    //% weight=50
+    //% blockId="vGo" block="go%direction|at speed%speed"
+    //% speed.min=0 speed.max=100
+    //% weight=100
     //% subcategory=Motors
-    export function motor(motor: vMotor, speed: number): void
+    export function go(direction: vDirection, speed: number): void
     {
-        let reverse = 0;
-        if (speed == 0)
+        move(vMotor.Both, direction, speed);
+    }
+
+    /**
+      * Rotate 2WD robot in direction at speed
+      * @param direction direction to turn
+      * @param speed speed of motors (0 to 100). eg: 60
+      */
+    //% blockId="vRotate" block="spin%direction|at speed%speed"
+    //% speed.min=0 speed.max=100
+    //% weight=90
+    //% subcategory=Motors
+    export function rotate(direction: vRobotDirection, speed: number): void
+    {
+        if (direction == vRobotDirection.Left)
         {
-            stop(vStopMode.Coast);
-            return;
+            move(vMotor.M1, vDirection.Reverse, speed);
+            move(vMotor.M2, vDirection.Forward, speed);
         }
-        if (speed < 0)
+        else if (direction == vRobotDirection.Right)
         {
-            reverse = 1;
-            speed = -speed;
-        }
-        setPWM(speed);
-        if (getModel() == vModel.Plus)
-        {
-            if ((motor == vMotor.M1) || (motor == vMotor.Both))
-            {
-                pins.analogWritePin(AnalogPin.P12, speed);
-                pins.digitalWritePin(DigitalPin.P13, reverse);
-                lDir = reverse;
-            }
-            if ((motor == vMotor.M2) || (motor == vMotor.Both))
-            {
-                pins.analogWritePin(AnalogPin.P14, speed);
-                pins.digitalWritePin(DigitalPin.P15, reverse);
-                rDir = reverse;
-            }
-        }
-        else // model == Zero
-        {
-            if ((motor == vMotor.M1) || (motor == vMotor.Both))
-            {
-                if (reverse == 0)
-                {
-                    pins.analogWritePin(AnalogPin.P12, speed);
-                    pins.analogWritePin(AnalogPin.P13, 0);
-                }
-                else
-                {
-                    pins.analogWritePin(AnalogPin.P12, 0);
-                    pins.analogWritePin(AnalogPin.P13, speed);
-                }
-            }
-            if ((motor == vMotor.M2) || (motor == vMotor.Both))
-            {
-                if (reverse == 0)
-                {
-                    pins.analogWritePin(AnalogPin.P14, speed);
-                    pins.analogWritePin(AnalogPin.P15, 0);
-                }
-                else
-                {
-                    pins.analogWritePin(AnalogPin.P14, 0);
-                    pins.analogWritePin(AnalogPin.P15, speed);
-                }
-            }
+            move(vMotor.M1, vDirection.Forward, speed);
+            move(vMotor.M2, vDirection.Reverse, speed);
         }
     }
 
@@ -302,7 +214,7 @@ namespace valenta
       * Stop robot by coasting slowly to a halt or braking
       * @param mode Brakes on or off
       */
-    //% blockId="val_stop" block="stop with %mode"
+    //% blockId="val_stop" block="stop with%mode"
     //% weight=80
     //% subcategory=Motors
     export function stop(mode: vStopMode): void
@@ -327,144 +239,304 @@ namespace valenta
     }
 
     /**
-      * Drive robot forward (or backward) at speed.
-      * @param speed speed of motor between -1023 and 1023. eg: 600
-      */
-    //% blockId="val_drive" block="drive at speed %speed"
-    //% speed.min=-1023 speed.max=1023
-    //% weight=100
-    //% subcategory=Motors
-    export function drive(speed: number): void
-    {
-        motor(vMotor.Both, speed);
-    }
-
-    /**
-      * Drive robot forward (or backward) at speed for milliseconds.
-      * @param speed speed of motor between -1023 and 1023. eg: 600
+      * Move both motors forward (or backward) at speed for milliseconds
+      * @param direction Move Forward or Reverse
+      * @param speed speed of motor between 0 and 100. eg: 60
       * @param milliseconds duration in milliseconds to drive forward for, then stop. eg: 400
       */
-    //% blockId="val_drive_milliseconds" block="drive at speed %speed| for %milliseconds|(ms)"
-    //% speed.min=-1023 speed.max=1023
+    //% blockId="vGoms" block="go%direction|at speed%speed|for%milliseconds|(ms)"
+    //% speed.min=0 speed.max=100
     //% weight=70
     //% subcategory=Motors
-    export function driveMilliseconds(speed: number, milliseconds: number): void
+    export function goms(direction: vDirection, speed: number, milliseconds: number): void
     {
-        drive(speed);
+        go(direction, speed);
         basic.pause(milliseconds);
         stop(vStopMode.Coast);
     }
 
     /**
-      * Turn robot in direction at speed.
-      * @param direction direction to turn.
-      * @param speed speed of motor between 0 and 1023. eg: 600
-      */
-    //% blockId="val_spin" block="spin %direction|at speed %speed"
-    //% speed.min=0 speed.max=1023
-    //% weight=90
-    //% subcategory=Motors
-    export function spin(direction: vRobotDirection, speed: number): void
-    {
-        if (speed < 0)
-            speed = 0;
-        if (direction == vRobotDirection.Left)
-        {
-            motor(vMotor.M1, -speed);
-            motor(vMotor.M2, speed);
-        }
-        else if (direction == vRobotDirection.Right)
-        {
-            motor(vMotor.M1, speed);
-            motor(vMotor.M2, -speed);
-        }
-    }
-
-    /**
-      * Spin robot in direction at speed for milliseconds.
+      * Rotate 2WD robot in direction at speed for milliseconds.
       * @param direction direction to spin
-      * @param speed speed of motor between 0 and 1023. eg: 600
+      * @param speed speed of motor between 0 and 100. eg: 60
       * @param milliseconds duration in milliseconds to spin for, then stop. eg: 400
       */
-    //% blockId="val_spin_milliseconds" block="spin %direction|at speed %speed| for %milliseconds|(ms)"
-    //% speed.min=0 speed.max=1023
+    //% blockId="vRotatems" block="spin%direction|at speed%speed|for%milliseconds|(ms)"
+    //% speed.min=0 speed.max=100
     //% weight=60
     //% subcategory=Motors
-    export function spinMilliseconds(direction: vRobotDirection, speed: number, milliseconds: number): void
+    export function rotatems(direction: vRobotDirection, speed: number, milliseconds: number): void
     {
-        spin(direction, speed);
+        rotate(direction, speed);
         basic.pause(milliseconds);
         stop(vStopMode.Coast);
     }
 
-
-// LED Blocks
-
-    // create a neopixel strip if not got one already. Default to brightness 40
-    function neo(): neopixel.Strip
+    /**
+      * Move individual motors forward or reverse
+      * @param motor motor to drive
+      * @param direction select forwards or reverse
+      * @param speed speed of motor between 0 and 100. eg: 60
+      */
+    //% blockId="vMove" block="move%motor|motor(s)%direction|at speed%speed"
+    //% weight=50
+    //% speed.min=0 speed.max=100
+    //% subcategory=Motors
+    export function move(motor: vMotor, direction: vDirection, speed: number): void
     {
-        if (!neoStrip)
+        speed = clamp(speed, 0, 100) * 10.23;
+        setPWM(speed);
+        let lSpeed = Math.round(speed * (100 - leftBias) / 100);
+        let rSpeed = Math.round(speed * (100 - rightBias) / 100);
+        if (getModel() == vModel.Zero)
         {
-            neoStrip = neopixel.create(DigitalPin.P16, 4, NeoPixelMode.RGB);
-            neoStrip.setBrightness(40);
+            if ((motor == vMotor.M1) || (motor == vMotor.Both))
+            {
+                if (direction == vDirection.Forward)
+                {
+                    pins.analogWritePin(AnalogPin.P12, lSpeed);
+                    pins.analogWritePin(AnalogPin.P13, 0);
+                }
+                else
+                {
+                    pins.analogWritePin(AnalogPin.P12, 0);
+                    pins.analogWritePin(AnalogPin.P13, lSpeed);
+                }
+            }
+            if ((motor == vMotor.M2) || (motor == vMotor.Both))
+            {
+                if (direction == vDirection.Forward)
+                {
+                    pins.analogWritePin(AnalogPin.P14, rSpeed);
+                    pins.analogWritePin(AnalogPin.P15, 0);
+                }
+                else
+                {
+                    pins.analogWritePin(AnalogPin.P14, 0);
+                    pins.analogWritePin(AnalogPin.P15, rSpeed);
+                }
+            }
         }
-        return neoStrip;
+        else // model == Plus
+        {
+            let reverse = (direction == vDirection.Reverse) ? 1 : 0;
+            if ((motor == vMotor.M1) || (motor == vMotor.Both))
+            {
+                pins.analogWritePin(AnalogPin.P12, speed);
+                pins.digitalWritePin(DigitalPin.P13, reverse);
+                lDir = reverse;
+            }
+            if ((motor == vMotor.M2) || (motor == vMotor.Both))
+            {
+                pins.analogWritePin(AnalogPin.P14, speed);
+                pins.digitalWritePin(DigitalPin.P15, reverse);
+                rDir = reverse;
+            }
+        }
     }
 
-    // update LEDs always
-    function updateLEDs(): void
+// Servo Blocks
+
+    // initialise the servo driver and the offset array values
+    function initPCA(): void
     {
-        neo().show();
+
+        let i2cData = pins.createBuffer(2);
+        initI2C = true;
+
+        i2cData[0] = 0;		// Mode 1 register
+        i2cData[1] = 0x10;	// put to sleep
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+
+        i2cData[0] = 0xFE;	// Prescale register
+        i2cData[1] = 101;	// set to 60 Hz
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+
+        i2cData[0] = 0;		// Mode 1 register
+        i2cData[1] = 0x81;	// Wake up
+        pins.i2cWriteBuffer(PCA, i2cData, false);
+
+        for (let servo=0; servo<16; servo++)
+        {
+            i2cData[0] = SERVOS + servo*4 + 0;	// Servo register
+            i2cData[1] = 0x00;			// low byte start - always 0
+            _i2cError = pins.i2cWriteBuffer(PCA, i2cData, false);
+
+            i2cData[0] = SERVOS + servo*4 + 1;	// Servo register
+            i2cData[1] = 0x00;			// high byte start - always 0
+            pins.i2cWriteBuffer(PCA, i2cData, false);
+
+            servoOffset[servo] = 0;
+        }
     }
 
     /**
-      * Sets all LEDs to a given color (range 0-255 for r, g, b).
-      * @param rgb RGB color of the LED
+      * Initialise all servos to Angle=0
       */
-    //% blockId="val_set_led_color" block="set LED to %rgb=val_colours"
+    //% blockId="zeroServos"
+    //% block="centre all servos"
+    //% subcategory=Servos
+    export function zeroServos(): void
+    {
+        for (let i=0; i<16; i++)
+            setServo(i, 0);
+    }
+
+    /**
+      * Set offsets for servos
+      * @param servo servo or pin to set offset
+      * @param degrees degrees +ve or -ve to offset servo
+      */
+    //% blockId="OffsetServos"
+    //% block="Offset servo%servo|by%degrees|degrees"
+    //% subcategory=Servos
+    export function offsetServos(servo: number, degrees: number): void
+    {
+        if (initI2C == false)
+        {
+            initPCA();
+        }
+        servo = clamp(servo, 0, 15);
+        degrees = clamp(degrees, -20, 20);
+        servoOffset[servo] = degrees;
+    }
+
+    /**
+      * Set Servo Position by Angle
+      * For Valenta Zero, servo number is the pin number
+      * @param servo Servo number (0 to 15)
+      * @param angle degrees to turn servo (-90 to +90)
+      */
+    //% blockId="an_setServo" block="set servo %servo| to angle %angle"
+    //% weight = 70
+    //% angle.min=-90 angle.max=90
+    //% subcategory=Servos
+    export function setServo(servo: number, angle: number): void
+    {
+        if (initI2C == false)
+        {
+            initPCA();
+        }
+        servo = clamp(servo, 0, 15);
+        angle = clamp(angle, -90, 90) + servoOffset[servo];
+        if (_model == vModel.Zero)
+        {
+            // servo is pin number
+            switch(servo)
+            {
+                case 0: pins.servoWritePin(AnalogPin.P0, angle + 90); break;
+                case 1: pins.servoWritePin(AnalogPin.P1, angle + 90); break;
+                case 2: pins.servoWritePin(AnalogPin.P2, angle + 90); break;
+                case 8: pins.servoWritePin(AnalogPin.P8, angle + 90); break;
+            }
+        }
+        else
+        {
+            // two bytes need setting for start and stop positions of the servo
+            // servos start at SERVOS (0x06) and are then consecutive blocks of 4 bytes
+            // the start position (always 0x00) is set during init for all servos
+            // the zero offset for each servo is read during init into the servoOffset array
+            let i2cData = pins.createBuffer(2);
+            let start = 0;
+            let stop = 369 + angle * 223 / 90;
+
+            i2cData[0] = SERVOS + servo*4 + 2;	// Servo register
+            i2cData[1] = (stop & 0xff);		// low byte stop
+            pins.i2cWriteBuffer(PCA, i2cData, false);
+
+            i2cData[0] = SERVOS + servo*4 + 3;	// Servo register
+            i2cData[1] = (stop >> 8);		// high byte stop
+            pins.i2cWriteBuffer(PCA, i2cData, false);
+        }
+    }
+
+
+// FireLed Status Blocks
+
+    // create a FireLed band if not got one already. Default to brightness 40
+    function fire(): fireled.Band
+    {
+        if (!fireBand)
+        {
+            fireBand = fireled.newBand(DigitalPin.P16, 1);
+            fireBand.setBrightness(40);
+        }
+        return fireBand;
+    }
+
+    // Always update status LED
+    function updateLEDs(): void
+    {
+        fire().updateBand();
+    }
+
+    /**
+      * Sets the status LED to a given color (range 0-255 for r, g, b).
+      * @param rgb colour of the LED
+      */
+    //% blockId="db_set_led_color" block="set LED to %rgb=val_colours"
     //% weight=100
-    //% subcategory=LEDs
+    //% subcategory=FireLed
     export function setLedColor(rgb: number)
     {
-        neo().showColor(rgb);
+        stopFlash();
+        setLedColorRaw(rgb);
+    }
+
+    function setLedColorRaw(rgb: number)
+    {
+        fire().setBand(rgb);
         updateLEDs();
     }
 
     /**
       * Clear LED
       */
-    //% blockId="val_led_clear" block="clear LED"
-    //% weight=90
-    //% subcategory=LEDs
+    //% blockId="LedClear" block="clear LED"
+    //% weight=70
+    //% subcategory=FireLed
     export function ledClear(): void
     {
-        neo().clear();
+        stopFlash();
+        ledClearRaw();
+    }
+
+    function ledClearRaw(): void
+    {
+        fire().clearBand();
         updateLEDs();
     }
 
     /**
-     * Set the brightness of the LEDs
+     * Set the brightness of the LED
      * @param brightness a measure of LED brightness in 0-255. eg: 40
      */
-    //% blockId="val_led_brightness" block="set LED brightness %brightness"
+    //% blockId="LedBrightness" block="set LED brightness %brightness"
     //% brightness.min=0 brightness.max=255
-    //% weight=70
-    //% subcategory=LEDs
+    //% weight=50
+    //% subcategory=FireLed
     export function ledBrightness(brightness: number): void
     {
-        neo().setBrightness(brightness);
+        fire().setBrightness(brightness);
         updateLEDs();
     }
 
     /**
       * Get numeric value of colour
-      *
-      * @param color Standard RGB Led Colours
+      * @param color Standard RGB Led Colours eg: #ff0000
       */
     //% blockId="val_colours" block=%color
-    //% weight=50
-    //% subcategory=LEDs
-    export function vColours(color: vColors): number
+    //% blockHidden=false
+    //% weight=60
+    //% subcategory=FireLed
+    //% shim=TD_ID colorSecondary="#e7660b"
+    //% color.fieldEditor="colornumber"
+    //% color.fieldOptions.decompileLiterals=true
+    //% color.defl='#ff0000'
+    //% color.fieldOptions.colours='["#FF0000","#659900","#18E600","#80FF00","#00FF00","#FF8000","#D82600","#B24C00","#00FFC0","#00FF80","#FFC000","#FF0080","#FF00FF","#B09EFF","#00FFFF","#FFFF00","#8000FF","#0080FF","#0000FF","#FFFFFF","#FF8080","#80FF80","#40C0FF","#999999","#000000"]'
+    //% color.fieldOptions.columns=5
+    //% color.fieldOptions.className='rgbColorPicker'
+    export function dbColours(color: number): number
     {
         return color;
     }
@@ -476,9 +548,9 @@ namespace valenta
       * @param green Green value of the LED (0 to 255)
       * @param blue Blue value of the LED (0 to 255)
       */
-    //% blockId="val_convertRGB" block="convert from red %red| green %green| blue %blue"
-    //% weight=20
-    //% subcategory=LEDs
+    //% blockId="ConvertRGB" block="convert from red %red| green %green| blue %blue"
+    //% weight=40
+    //% subcategory=FireLed
     export function convertRGB(r: number, g: number, b: number): number
     {
         return ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
@@ -489,10 +561,10 @@ namespace valenta
       * @param color the colour to flash
       * @param delay time in ms for each flash, eg: 100,50,200,500
       */
-    //% blockId="startFlash" block="start flash %color=val_colours| at %delay|(ms)"
-    //% subcategory=LEDs
+    //% blockId="StartFlash" block="start flash %color=db_colours| at %delay|(ms)"
+    //% subcategory=FireLed
     //% delay.min=1 delay.max=10000
-    //% weight=15
+    //% weight=90
     export function startFlash(color: number, delay: number): void
     {
         if(_flashing == false)
@@ -502,9 +574,11 @@ namespace valenta
             {
                 while (_flashing)
                 {                                
-                    setLedColor(color);
+                    setLedColorRaw(color);
                     basic.pause(delay);
-                    ledClear();
+                    if (! _flashing)
+                        break;
+                    ledClearRaw();
                     basic.pause(delay);
                 }
             })
@@ -515,8 +589,8 @@ namespace valenta
       * Stop Flashing
       */
     //% block
-    //% subcategory=LEDs
-    //% weight=10
+    //% subcategory=FireLed
+    //% weight=80
     export function stopFlash(): void
     {
         _flashing = false;

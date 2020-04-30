@@ -1,19 +1,17 @@
 {
     "name": "Valenta",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "Microsoft MakeCode package for Valenta Zero & Plus",
     "license": "MIT",
     "dependencies": {
         "core": "*",
-        "neopixel": "github:microsoft/pxt-neopixel#v0.6.10"
+        "fireled": "github:4tronix/FireLedsBase#0.1.4"
     },
     "files": [
         "README.md",
         "valenta.ts"
      ],
-    "testFiles": [
-        "tests.ts"
-    ],
+    "testFiles": [],
     "yotta": {},
     "public": true
 }
