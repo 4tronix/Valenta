@@ -89,8 +89,10 @@ Three commands are available:
 // Set the offset for an individual servo (to ensure it is properly centred)
 // Set servo on Pin 8 to an offset of +5 degrees
 valenta.offsetServos(8, 5)
+
 // Set servo on Pin 2 to +50 degrees (range is -90 to +90)
 valenta.setServo(2, 50)
+
 // Centre all servos
 valenta.zeroServos()
 ```
