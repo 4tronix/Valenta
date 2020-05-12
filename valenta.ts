@@ -419,7 +419,7 @@ namespace valenta
         }
         servo = clamp(servo, 0, 15);
         angle = clamp(angle, -90, 90) + servoOffset[servo];
-        if (_model == vModel.Zero)
+        if (getModel() == vModel.Zero)
         {
             // servo is pin number
             switch(servo)
