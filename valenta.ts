@@ -576,7 +576,7 @@ namespace valenta
       * @param color the colour to flash
       * @param delay time in ms for each flash, eg: 100,50,200,500
       */
-    //% blockId="StartFlash" block="start flash %color=db_colours| at %delay|(ms)"
+    //% blockId="StartFlash" block="start flash %color=val_colours| at %delay|(ms)"
     //% subcategory=FireLed
     //% delay.min=1 delay.max=10000
     //% weight=90
