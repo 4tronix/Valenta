@@ -458,7 +458,7 @@ namespace valenta
     {
         if (!fireBand)
         {
-            fireBand = fireled.newBand(DigitalPin.P16, 1);
+            fireBand = fireled.newBand(DigitalPin.P16, 4);
             fireBand.setBrightness(40);
         }
         return fireBand;
@@ -474,7 +474,7 @@ namespace valenta
       * Sets the status LED to a given color (range 0-255 for r, g, b).
       * @param rgb colour of the LED
       */
-    //% blockId="db_set_led_color" block="set LED to %rgb=val_colours"
+    //% blockId="SetLedColor" block="set LEDs to %rgb=val_colours"
     //% weight=100
     //% subcategory=FireLed
     export function setLedColor(rgb: number)
@@ -490,9 +490,24 @@ namespace valenta
     }
 
     /**
-      * Clear LED
+     * Set single LED to a given color (range 0-255 for r, g, b).
+     *
+     * @param ledId position of the LED (0 to 3)
+     * @param rgb RGB color of the LED
+     */
+    //% blockId="SetPixelColor" block="set LED at%ledId|to%rgb=val_colours"
+    //% weight=80
+    //% subcategory=FireLed
+    export function setPixelColor(ledId: number, rgb: number): void
+    {
+        fire().setPixel(ledId, rgb);
+        updateLEDs();
+    }
+
+    /**
+      * Clear LEDs
       */
-    //% blockId="LedClear" block="clear LED"
+    //% blockId="LedClear" block="clear all LEDs"
     //% weight=70
     //% subcategory=FireLed
     export function ledClear(): void
@@ -508,7 +523,7 @@ namespace valenta
     }
 
     /**
-     * Set the brightness of the LED
+     * Set the brightness of the LEDs
      * @param brightness a measure of LED brightness in 0-255. eg: 40
      */
     //% blockId="LedBrightness" block="set LED brightness %brightness"
